@@ -13,18 +13,21 @@ static const float position[12] = {
   -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f};
 
 static const GLchar *v_shader_source =
-  "attribute vec2 position;\n"
-  "varying vec2 texCoord;\n"
+  "#version 150\n"
+  "in vec2 position;\n"
+  "out vec2 texCoord;\n"
   "void main(void) {\n"
-  "  gl_Position = vec4(position, 0, 1);\n"
+  "  gl_Position = vec4(position.x, position.y, 0.0, 1.0);\n"
   "  texCoord = position;\n"
   "}\n";
 
 static const GLchar *f_shader_source =
+  "#version 150\n"
   "uniform sampler2D tex;\n"
-  "varying vec2 texCoord;\n"
+  "in vec2 texCoord;\n"
+  "out vec4 fragColor;\n"
   "void main() {\n"
-  "  gl_FragColor = texture2D(tex, texCoord * 0.5 + 0.5);\n"
+  "  fragColor = texture(tex, texCoord * 0.5 + 0.5);\n"
   "}\n";
 
 #define PIXEL_FORMAT GL_RGB
@@ -34,6 +37,7 @@ typedef struct {
   GLuint        program;
   GLuint        frame_tex;
   GLFWwindow    *window;
+  GLuint        vao;
   GLuint        pos_buf;
 } GenericShaderContext;
 
@@ -55,6 +59,8 @@ static GLuint build_shader(AVFilterContext *ctx, const GLchar *shader_source, GL
 }
 
 static void vbo_setup(GenericShaderContext *gs) {
+  glGenVertexArrays(1, &gs->vao);
+  glBindVertexArray(gs->vao);
   glGenBuffers(1, &gs->pos_buf);
   glBindBuffer(GL_ARRAY_BUFFER, gs->pos_buf);
   glBufferData(GL_ARRAY_BUFFER, sizeof(position), position, GL_STATIC_DRAW);
@@ -109,6 +115,10 @@ static int config_props(AVFilterLink *inlink) {
   AVFilterContext     *ctx = inlink->dst;
   GenericShaderContext *gs = ctx->priv;
 
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
   glfwWindowHint(GLFW_VISIBLE, 0);
   gs->window = glfwCreateWindow(inlink->w, inlink->h, "", NULL, NULL);
 
@@ -156,6 +166,7 @@ static av_cold void uninit(AVFilterContext *ctx) {
   glDeleteTextures(1, &gs->frame_tex);
   glDeleteProgram(gs->program);
   glDeleteBuffers(1, &gs->pos_buf);
+  glDeleteVertexArrays(1, &gs->vao);
   glfwDestroyWindow(gs->window);
 }
 

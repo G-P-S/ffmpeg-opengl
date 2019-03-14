@@ -1,5 +1,6 @@
 #include "libavutil/opt.h"
 #include "internal.h"
+#include <stdio.h>
 
 #ifdef __APPLE__
 #include <OpenGL/gl3.h>
@@ -55,6 +56,14 @@ static GLuint build_shader(AVFilterContext *ctx, const GLchar *shader_source, GL
   glCompileShader(shader);
   GLint status;
   glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
+  if (status == GL_FALSE) {
+    GLint log_length = 0;
+    glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &log_length);
+    GLchar *log_buffer = av_malloc(log_length);
+    glGetShaderInfoLog(shader, log_length, &log_length, log_buffer);
+    av_log(ctx, AV_LOG_ERROR, "GLSL %s\n", log_buffer);
+    av_free(log_buffer);
+  }
   return status == GL_TRUE ? shader : 0;
 }
 
@@ -91,9 +100,27 @@ static void tex_setup(AVFilterLink *inlink) {
 static int build_program(AVFilterContext *ctx) {
   GLuint v_shader, f_shader;
   GenericShaderContext *gs = ctx->priv;
+  GLchar *frag_shader_source = NULL;
+  FILE *glsl_file = fopen("genericshader.glsl", "r");
+  if (glsl_file) {
+    fseek(glsl_file, 0, SEEK_END);
+    long size = ftell(glsl_file);
+    fseek(glsl_file, 0, SEEK_SET);
+    if (size >= 0) {
+      frag_shader_source = calloc(1, size + 1);
+      size = fread(frag_shader_source, 1, size, glsl_file);
+      frag_shader_source[size] = '\0';
+    }
+  } else {
+    frag_shader_source = (GLchar*) f_shader_source;
+  }
 
   if (!((v_shader = build_shader(ctx, v_shader_source, GL_VERTEX_SHADER)) &&
-        (f_shader = build_shader(ctx, f_shader_source, GL_FRAGMENT_SHADER)))) {
+        (f_shader = build_shader(ctx, frag_shader_source, GL_FRAGMENT_SHADER)))) {
+    if (glsl_file) {
+      free(frag_shader_source);
+      fclose(glsl_file);
+    }
     return -1;
   }
 
@@ -101,6 +128,11 @@ static int build_program(AVFilterContext *ctx) {
   glAttachShader(gs->program, v_shader);
   glAttachShader(gs->program, f_shader);
   glLinkProgram(gs->program);
+
+  if (glsl_file) {
+    free(frag_shader_source);
+    fclose(glsl_file);
+  }
 
   GLint status;
   glGetProgramiv(gs->program, GL_LINK_STATUS, &status);
